@@ -2,6 +2,7 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
+import json
 import mock
 import os.path
 import pytest
@@ -16,6 +17,7 @@ from cuckoo.core.plugins import RunReporting
 from cuckoo.main import cuckoo_create
 from cuckoo.misc import set_cwd, cwd, is_linux
 from cuckoo.reporting.feedback import Feedback
+from cuckoo.reporting.maecreport import MaecReport
 from cuckoo.reporting.misp import MISP
 from cuckoo.reporting.mongodb import MongoDB
 from cuckoo.reporting.singlefile import SingleFile
@@ -267,6 +269,159 @@ def test_misp_domain_ipaddr():
     r.misp.add_ipdst.assert_called_once_with(
         "event", ["2.3.4.5", "3.4.5.6"],
     )
+
+@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_obj_id")
+def test_maec_create_obj_id(mock_create_obj_id):
+    r = MaecReport()
+    r.currentObjectIndex = mock.MagicMock()
+    expected_value = "12"
+    mock_create_obj_id.return_value = "12"
+
+    id_returned = r.create_obj_id()
+    assert expected_value == id_returned
+
+@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_malware_instance")
+def test_maec_create_malware_instance(mock_create_malware_instance):
+    r = MaecReport()
+    file_obj =  mock.Mock()
+    mal_instance = r.create_malware_instance(file_obj)
+    mock_create_malware_instance.assert_called_once()
+
+@mock.patch("cuckoo.reporting.maecreport.MaecReport.add_dropped_files")
+def test_add_dropped_files(mock_add_dropped):
+    r = MaecReport()
+    r.package = mock.MagicMock()
+    r.results = mock.MagicMock()
+    r.add_dropped_files()
+    mock_add_dropped.assert_called_once()
+
+
+@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_file_obj")
+def test_maec_create_file_obj(p):
+    r = MaecReport()
+    file_data =  {
+            "yara": [],
+            "sha1": "fc45b50db30ad6cfd9220f282acbcb659bf916fc",
+            "name": "test.bin",
+            "type": "data",
+            "sha256": "c0a86ac453f8216fa5081a647d188e82f17b3e6d9a5b02944b4558d9cbd7eb4b",
+            "crc32": "E44BBC63",
+            "sha512": "245202d8453dec655684e32f301ba58e67c4729e0847a5751fb712a1ada42ed9801237c5a9fb396ad0ae723a12f2407ac9773415776db384d0c298e9196bf603",
+            "md5": "67a37542aaa213b335b45501c9686493"
+        }
+    return_val = r.create_file_obj(file_data)
+    p.assert_called_once_with(file_data)
+
+
+def test_maec_create_directory_obj():
+    r = MaecReport()
+    test_value = "/dir/test/sample"
+    expected_value = {
+            'type': 'directory',
+            'path': "/dir/test/sample"
+        }
+    obj_returned = r.create_directory_obj(test_value)
+    assert expected_value == obj_returned
+
+def test_maec_create_process_obj():
+    r = MaecReport()
+    r.pidObjectMap = {}
+    r.objectMap = {}
+    r.currentObjectIndex = 0
+    r.package = mock.MagicMock()
+    initial_length = len(r.pidObjectMap)
+    test_val = mock.MagicMock()
+
+    r.create_process_obj(test_val)
+    assert (initial_length + 1) == len(r.pidObjectMap)
+
+@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_network_obj")
+def test_maec_create_network_obj(mock_network):
+    r = MaecReport()
+    test_value = mock.MagicMock()
+    expected_value = "12"
+    mock_network.return_value = "12"
+
+    id_returned = r.create_network_obj(test_value)
+    assert expected_value == id_returned
+
+def test_maec_deduplicate_obj():
+    r = MaecReport()
+    obj_hash = json.dumps( {"test_key" : "test_value"} )
+    expected_value = 12
+    r.objectMap = {}
+    r.objectMap[obj_hash] = expected_value
+
+    returned_value = r.deduplicate_obj({"test_key" : "test_value"})
+    assert returned_value == expected_value
+
+@mock.patch("cuckoo.reporting.maecreport.MaecReport.post_process_object")
+def test_maec_post_process_object(mock_process):
+    r = MaecReport()
+    expected_hash = json.dumps( {"test_key" : "test_value"} )
+    mock_process.return_value = expected_hash
+
+    #parameters
+    obj = mock.MagicMock(name='obj_param')
+    arguments = mock.MagicMock(name='arguments_param')
+
+    return_val = r.post_process_object(obj, arguments)
+    assert return_val == expected_hash
+
+@mock.patch("cuckoo.reporting.maecreport.MaecReport.map_api_to_action")
+def test_maec_map_api_to_action(mock_map):
+    r = MaecReport()
+    r.package = mock.MagicMock(name='package')
+    expected_value = '7b6f7e9d-b9d7-482d-a195-30594901ab77'
+    mock_map.return_value = expected_value
+
+    #parameters
+    mapping = mock.MagicMock(name='mapping')
+    call = mock.MagicMock(name='call')
+
+    return_val = r.map_api_to_action(mapping, call)
+    assert expected_value == return_val
+
+@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_avc_class_obj_list")
+def test_maec_create_avc_class_obj_list(mock_create):
+    r = MaecReport()
+    expected_value = ["test"]
+    mock_create.return_value = expected_value
+
+    cuckoo_dict = mock.MagicMock(name='cuckoo_virusToal_dict')
+    returned_val = r.create_avc_class_obj_list()
+    assert expected_value == returned_val
+
+
+def test_maec_add_process_tree():
+    r = MaecReport()
+    r.primaryInstance = {}
+    r.primaryInstance['dynamic_features'] = {}
+    r.primaryInstance['dynamic_features']['process_tree'] = "test_wrong_type"
+    r.results = mock.MagicMock()
+
+    r.add_process_tree()
+    assert isinstance(r.primaryInstance['dynamic_features']['process_tree'], list)
+
+@mock.patch("cuckoo.reporting.maecreport.MaecReport.add_capabilities")
+def test_maec_add_capabilities(mock_add):
+    r = MaecReport()
+    r.signature_names = mock.MagicMock(name='signature_names')
+
+    r.add_capabilities()
+    mock_add.assert_called_once()
+
+@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_directory_from_file_path")
+def test_maec_create_directory_from_file_path(mock_create_dir_path):
+    r = MaecReport()
+    file_obj = mock.MagicMock(name='file_obj')
+    path = mock.MagicMock(name='path')
+    r.create_directory_from_file_path(file_obj, path)
+    mock_create_dir_path.assert_called_once_with(file_obj, path)
+
+
+
+
 
 @mock.patch("cuckoo.reporting.mongodb.mongo")
 def test_mongodb_init_once_new(p):
