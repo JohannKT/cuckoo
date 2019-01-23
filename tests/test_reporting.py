@@ -287,6 +287,26 @@ def test_maec_create_malware_instance(mock_create_malware_instance):
     mal_instance = r.create_malware_instance(file_obj)
     mock_create_malware_instance.assert_called_once()
 
+
+@mock.patch("cuckoo.reporting.maecreport.MaecReport.setup_primary_malware_instance")
+def test_maec_setup_primary_malware_instance(mock_setup):
+    r = MaecReport()
+    r.package = mock.MagicMock()
+    r.currentObjectIndex = 0
+    result_sample = {
+        'target' : {
+            'category' : 'url',
+            'url' : 'test.com'
+        },
+        'info' : {
+            'version' : "1234"
+        }
+
+    }
+    r.results = result_sample
+    mal_instance = r.setup_primary_malware_instance()
+    mock_setup.assert_called_once()
+
 @mock.patch("cuckoo.reporting.maecreport.MaecReport.add_dropped_files")
 def test_add_dropped_files(mock_add_dropped):
     r = MaecReport()
@@ -418,9 +438,6 @@ def test_maec_create_directory_from_file_path(mock_create_dir_path):
     path = mock.MagicMock(name='path')
     r.create_directory_from_file_path(file_obj, path)
     mock_create_dir_path.assert_called_once_with(file_obj, path)
-
-
-
 
 
 @mock.patch("cuckoo.reporting.mongodb.mongo")
