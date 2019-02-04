@@ -2,6 +2,7 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
+import datetime
 import json
 import mock
 import os.path
@@ -508,43 +509,61 @@ def test_maec_deduplicate_obj():
     returned_value = r.deduplicate_obj({"test_key" : "test_value"})
     assert returned_value == expected_value
 
-@mock.patch("cuckoo.reporting.maecreport.MaecReport.post_process_object")
-def test_maec_post_process_object(mock_process):
+def test_maec_map_api_to_action():
     r = MaecReport()
-    expected_hash = json.dumps( {"test_key" : "test_value"} )
-    mock_process.return_value = expected_hash
-
-    #parameters
-    obj = mock.MagicMock(name='obj_param')
-    arguments = mock.MagicMock(name='arguments_param')
-
-    return_val = r.post_process_object(obj, arguments)
-    assert return_val == expected_hash
-
-@mock.patch("cuckoo.reporting.maecreport.MaecReport.map_api_to_action")
-def test_maec_map_api_to_action(mock_map):
-    r = MaecReport()
-    r.package = mock.MagicMock(name='package')
-    expected_value = '7b6f7e9d-b9d7-482d-a195-30594901ab77'
-    mock_map.return_value = expected_value
-
-    #parameters
-    mapping = mock.MagicMock(name='mapping')
-    call = mock.MagicMock(name='call')
-
+    r.package = {"type": "package",
+                        "id": None,
+                        "schema_version": "5.0",
+                        "maec_objects": [],
+                        "observable_objects": {}}
+    mapping = {}
+    mapping["action_name"] = "check-for-remote-debugger"
+    call = {
+            "category": "system",
+            "status": 0,
+            "stacktrace": [],
+            "last_error": 2,
+            "nt_status": -1073741772,
+            "api": "IsDebuggerPresent",
+            "return_value": 0,
+            "arguments": {},
+            "time": datetime.datetime.now(),
+            "tid": 3808,
+            "flags": {}
+            }
     return_val = r.map_api_to_action(mapping, call)
-    assert expected_value == return_val
+    assert r.package['maec_objects'][0]['name'] == "check-for-remote-debugger"
+    assert r.package['maec_objects'][0]['type'] == "malware-action"
 
-@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_avc_class_obj_list")
-def test_maec_create_avc_class_obj_list(mock_create):
+
+def test_maec_create_avc_class_obj_list():
     r = MaecReport()
-    expected_value = ["test"]
-    mock_create.return_value = expected_value
+    virus_total_dict = {
+            "scan_date": "2019-01-30 21:12:16",
+            "scans": {
+                  "Bkav": {
+                "detected": True,
+                "version": "1.3.0.9899",
+                "result": "HW32.Packed.",
+                "normalized": [
+                    "HW32"
+                ],
+                "update": "20190130"
+            }
+            }
+        }
+    expected_return = {
+          "classification_name": "HW32.Packed.",
+          "av_vendor": "Bkav",
+          "av_name": "Bkav",
+          "av_definition_version": "20190130",
+          "scan_date": "2019-01-30 21:12:16",
+          "is_detected": True,
+          "av_version": "1.3.0.9899"
+        }
 
-    cuckoo_dict = mock.MagicMock(name='cuckoo_virusToal_dict')
-    returned_val = r.create_avc_class_obj_list()
-    assert expected_value == returned_val
-
+    return_val = r.create_avc_class_obj_list(virus_total_dict)
+    assert return_val[0] == expected_return
 
 def test_maec_add_process_tree():
     r = MaecReport()
@@ -555,6 +574,41 @@ def test_maec_add_process_tree():
 
     r.add_process_tree()
     assert isinstance(r.primaryInstance['dynamic_features']['process_tree'], list)
+
+def test_maec_add_signatures():
+    r = MaecReport()
+    r.signature_names = []
+    r.primaryInstance= {}
+
+    r.results = {'signatures': [
+             {
+                    "markcount": 1,
+                    "families": [],
+                    "description": "Performs some HTTP requests",
+                    "severity": 2,
+                    "marks": [
+                        {
+                            "category": "request",
+                            "ioc": "GET http://test.com",
+                            "type": "ioc",
+                            "description": None
+                        }
+                    ],
+                    "references": [],
+                    "name": "network_http"
+                } ]
+        }
+    expected_value = [
+            {
+                "signature_type": "cuckoo-sandbox",
+                "description": "Performs some HTTP requests",
+                "severity": "2"
+            }
+        ]
+
+    r.add_signatures()
+    assert expected_value == r.primaryInstance['triggered_signatures']
+
 
 @mock.patch("cuckoo.reporting.maecreport.MaecReport.add_capabilities")
 def test_maec_add_capabilities(mock_add):
