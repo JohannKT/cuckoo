@@ -271,21 +271,8 @@ def test_misp_domain_ipaddr():
         "event", ["2.3.4.5", "3.4.5.6"],
     )
 
-def test_maec_empty_report():
-    set_cwd(tempfile.mkdtemp())
-
-    conf = {
-        "maecreport": {
-            "enabled": True,
-        },
-    }
-    report_path = cwd("reports", "report.json", analysis=1)
-
-    task(1, {}, conf, {})
-    assert os.path.exists(report_path)
-    assert open(report_path, "rb").read() == "{}"
-
 def test_maec_create_obj_id():
+    """ Tests to see if object id is properly incremented and returned"""
     r = MaecReport()
     test_id = 0
     expected_curr_id = 1
@@ -297,6 +284,7 @@ def test_maec_create_obj_id():
     assert expected_curr_id == r.currentObjectIndex
 
 def test_maec_create_malware_instance():
+    """ Tests if malware instance is properly created from cuckoo result data"""
     r = MaecReport()
     r.currentObjectIndex = mock.MagicMock()
     r.objectMap = mock.MagicMock()
@@ -315,35 +303,10 @@ def test_maec_create_malware_instance():
     mal_instance = r.create_malware_instance(file_data)
     assert mal_instance['type'] == "malware-instance"
 
-"""
-@mock.patch("cuckoo.reporting.maecreport.MaecReport.run")
-def test_maec_setup_primary_malware_instance(mock_setup):
-    set_cwd(tempfile.mkdtemp())
-    conf = {
-        "maecreport": {
-            "enabled": True,
-        },
-     }
-    file_sample ={
-         "target": {
-             "category": "file",
-             "file": {
-                 "yara": [],
-                 "sha1": "7681dab7723a6264d12957dbcfe06be2980920db",
-                 "name": "malware.bin",
-                 "type": "data",
-                 "sha256": "a1e69c08e717e39bfc332de2db53df463ff91f3ed77ad32ef8462f5bd4729bab",
-                 "size": 393,
-                 "sha512": "f75cda28bf118e196ccc452b8e1566d396116a8072133f8a9b14600e13f63eea9f449f6e5f787a126d5b8c220f7bd3661ab3912400eb80e0138b13e7881cb6d4",
-                 "md5": "4f7dfbd2464f322113da68fb140a908e"
-             }
-             }
-     }
-    task(1, {}, conf, file_sample)
-    mock_setup.assert_called_once()
-"""
+
 
 def test_maec_setup_primary_malware_instance():
+    """ Tests if cuckoo malware instance is properly converted"""
     r = MaecReport()
     r.package = mock.MagicMock()
     r.currentObjectIndex = 0
@@ -395,8 +358,6 @@ def test_maec_setup_primary_malware_instance():
       "dynamic_features": {}
     }
 
-
-
     r.results = file_sample
     r.setup_primary_malware_instance()
     r.primaryInstance.update(id = "test")
@@ -405,6 +366,7 @@ def test_maec_setup_primary_malware_instance():
 
 
 def test_add_dropped_files():
+    """ Tests if dropped file is added to package properly"""
     r = MaecReport()
     r.package = {"type": "package",
                         "id": None,
@@ -435,6 +397,7 @@ def test_add_dropped_files():
 
 
 def test_maec_create_file_obj():
+    """ Test if file obj is correctly converted to MAEC format """
     r = MaecReport()
     r.currentObjectIndex = 0
     file_data =  {
@@ -466,8 +429,27 @@ def test_maec_create_file_obj():
     assert return_val[1] == expected_value
 
 
+def test_maec_create_directory_from_file_path():
+    """ Tests if directory if properly created from given file path """
+    r = MaecReport()
+    r.objectMap = {}
+    r.currentObjectIndex = 0
+    r.package = mock.MagicMock()
+    expected_value = '0'
+    file_obj = {
+            "sha1": "fc45b50db30ad6cfd9220f282acbcb659bf916fc",
+            "name": "test.bin",
+            "path" : "/test/path"
+
+        }
+    path = "/other/test/path"
+    r.create_directory_from_file_path(file_obj, path)
+    assert file_obj['parent_directory_ref'] == expected_value
+
+
 
 def test_maec_create_directory_obj():
+    """ Tests if directory object is properly created from given dir. path"""
     r = MaecReport()
     test_value = "/dir/test/sample"
     expected_value = {
@@ -478,6 +460,7 @@ def test_maec_create_directory_obj():
     assert expected_value == obj_returned
 
 def test_maec_create_process_obj():
+    """ Tests if given obj is correctly added to pidObjectMap variable """
     r = MaecReport()
     r.pidObjectMap = {}
     r.objectMap = {}
@@ -489,17 +472,64 @@ def test_maec_create_process_obj():
     r.create_process_obj(test_val)
     assert (initial_length + 1) == len(r.pidObjectMap)
 
-def test_maec_create_network_obj():
+def test_maec_add_http_data():
+    """ Tests if http data is properly added to obj variable passed in """
     r = MaecReport()
-    test_value = mock.MagicMock()
-    expected_value = "12"
-    mock_network.return_value = "12"
+    r.objectMap = {}
+    r.currentObjectIndex = 0
+    network_obj = {'value' : "192.168.1.1"}
+    http_resource ="http://test.com"
+    obj = {
 
-    id_returned = r.create_network_obj(test_value)
+    }
+    expected_value = {
+          "extensions": {
+            "http-request-ext": {
+              "request_method": "GET",
+              "request_value": "http://test.com",
+              "request_header": {
+                "Host": "192.168.1.1"
+              }
+            }
+          },
+          "protocols": [
+            "http"
+          ]
+         }
 
-    assert expected_value == id_returned
+    r.add_http_data(obj, http_resource, network_obj)
+    assert obj == expected_value
+
+
+def test_maec_create_network_obj():
+    """ Tests if network object value is created and added to object map and that
+    proper id is returned"""
+    r = MaecReport()
+    r.objectMap = {}
+    r.currentObjectIndex = 0
+    r.package = mock.MagicMock()
+    expected_id = '0'
+    network_obj = {
+        "udp": [
+            {
+                "src": "192.168.1.1",
+                "dst": "192.168.1.2",
+                "offset": 524,
+                "time": 10,
+                "dport": 80,
+                "sport": 138
+            }
+        ],
+    }
+    value = "192.168.1.1"
+    expected_obj = {'{"type": "ipv4-addr", "value": "192.168.1.1"}': '0'}
+    id_returned = r.create_network_obj(value, network_obj)
+    assert id_returned == expected_id
+    assert expected_obj == r.objectMap
 
 def test_maec_deduplicate_obj():
+    """ Tests if given object is checked for in objectMap and that the proper id
+    is returned """
     r = MaecReport()
     obj_hash = json.dumps( {"test_key" : "test_value"} )
     expected_value = 12
@@ -509,34 +539,85 @@ def test_maec_deduplicate_obj():
     returned_value = r.deduplicate_obj({"test_key" : "test_value"})
     assert returned_value == expected_value
 
+def test_maec_map_objects():
+    r = MaecReport()
+    r.map_object_properties = mock.MagicMock()
+    action = {
+          "id": "action--test-id",
+          "type": "malware-action",
+          "name": "test_action_name",
+          "timestamp": "test_timestamp"
+        }
+    objects_class = "test_object_class"
+    mapping = {'test_object_class': [
+                    {
+                    "object_type" : "test_type",
+                    'cuckoo_arg' : 'test_cuckoo_arg'
+                    }]
+                }
+    arguments = {'test_cuckoo_arg' : 'test_value'}
+    obj = {'type' : 'test_type'}
+    r.map_objects(action, objects_class, mapping, arguments)
+    r.map_object_properties.assert_called_once_with(obj, {
+    "object_type" : "test_type",
+    'cuckoo_arg' : 'test_cuckoo_arg'
+    }, arguments)
+
+
 def test_maec_map_api_to_action():
+    """ Tests if given call is correctly mapped to action """
     r = MaecReport()
     r.package = {"type": "package",
                         "id": None,
                         "schema_version": "5.0",
                         "maec_objects": [],
-                        "observable_objects": {}}
+                        "observable_objects": {}
+                }
     mapping = {}
     mapping["action_name"] = "check-for-remote-debugger"
     call = {
             "category": "system",
-            "status": 0,
-            "stacktrace": [],
-            "last_error": 2,
-            "nt_status": -1073741772,
             "api": "IsDebuggerPresent",
             "return_value": 0,
             "arguments": {},
             "time": datetime.datetime.now(),
-            "tid": 3808,
             "flags": {}
             }
+
     return_val = r.map_api_to_action(mapping, call)
     assert r.package['maec_objects'][0]['name'] == "check-for-remote-debugger"
     assert r.package['maec_objects'][0]['type'] == "malware-action"
 
+def test_maec_map_api_calls():
+    """ tests if given call is correctly mapped to api """
+    r = MaecReport()
+    r.package = {"type": "package",
+                        "id": None,
+                        "schema_version": "5.0",
+                        "maec_objects": [],
+                        "observable_objects": {}
+                }
+    r.pidActionMap = {}
+    r.apiMappings = {}
+    r.apiMappings.update( test_api_call = {'action_name' : "test_mapping"})
+    expected_pid = "1234"
+    r.results = {'behavior': {
+    'processes': [{ 'calls' : [
+                {
+                    'api' : 'test_api_call',
+                    "time": datetime.datetime.now()
+                }
+            ],
+            'pid' : '1234'
+            }]
+        }
+    }
+    r.map_api_calls()
+    assert expected_pid in r.pidActionMap
+
 
 def test_maec_create_avc_class_obj_list():
+    """ Tests if virustotal results are correctly converted to obj list """
     r = MaecReport()
     virus_total_dict = {
             "scan_date": "2019-01-30 21:12:16",
@@ -566,6 +647,8 @@ def test_maec_create_avc_class_obj_list():
     assert return_val[0] == expected_return
 
 def test_maec_add_process_tree():
+    """ Tests if process tree is created by starting it as a list and then
+    checking if the module correctly creates a list """
     r = MaecReport()
     r.primaryInstance = {}
     r.primaryInstance['dynamic_features'] = {}
@@ -576,6 +659,7 @@ def test_maec_add_process_tree():
     assert isinstance(r.primaryInstance['dynamic_features']['process_tree'], list)
 
 def test_maec_add_signatures():
+    """ Tests that given signature is correctly converted """
     r = MaecReport()
     r.signature_names = []
     r.primaryInstance= {}
@@ -609,23 +693,18 @@ def test_maec_add_signatures():
     r.add_signatures()
     assert expected_value == r.primaryInstance['triggered_signatures']
 
-
-@mock.patch("cuckoo.reporting.maecreport.MaecReport.add_capabilities")
-def test_maec_add_capabilities(mock_add):
+def test_maec_add_capabilities():
+    """ Tests that given capabilities are correctly converted"""
     r = MaecReport()
-    r.signature_names = mock.MagicMock(name='signature_names')
+    r.primaryInstance = {}
+    r.primaryInstance.update(capabilities = {})
+    r.signature_names = []
+    r.signature_names.append("antivm")
 
+    expected_value = {'name': 'anti-behavioral-analysis',
+                'refined_capabilities': [{'name': 'anti-vm'}]}
     r.add_capabilities()
-    mock_add.assert_called_once()
-
-@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_directory_from_file_path")
-def test_maec_create_directory_from_file_path(mock_create_dir_path):
-    r = MaecReport()
-    file_obj = mock.MagicMock(name='file_obj')
-    path = mock.MagicMock(name='path')
-    r.create_directory_from_file_path(file_obj, path)
-    mock_create_dir_path.assert_called_once_with(file_obj, path)
-
+    assert r.primaryInstance['capabilities'][0] == expected_value
 
 @mock.patch("cuckoo.reporting.mongodb.mongo")
 def test_mongodb_init_once_new(p):
