@@ -295,7 +295,7 @@ def test_maec_create_obj_id(mock_create_obj_id):
     id_returned = r.create_obj_id()
     assert expected_value == id_returned
 
-#@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_malware_instance")
+
 
 def test_maec_create_malware_instance():
     r = MaecReport()
