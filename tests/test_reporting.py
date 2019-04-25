@@ -2,6 +2,7 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
+import collections
 import json
 import mock
 import os.path
@@ -270,6 +271,20 @@ def test_misp_domain_ipaddr():
         "event", ["2.3.4.5", "3.4.5.6"],
     )
 
+def test_maec_empty_report():
+    set_cwd(tempfile.mkdtemp())
+
+    conf = {
+        "maecreport": {
+            "enabled": True,
+        },
+    }
+    report_path = cwd("reports", "report.json", analysis=1)
+
+    task(1, {}, conf, {})
+    assert os.path.exists(report_path)
+    assert open(report_path, "rb").read() == "{}"
+
 @mock.patch("cuckoo.reporting.maecreport.MaecReport.create_obj_id")
 def test_maec_create_obj_id(mock_create_obj_id):
     r = MaecReport()
@@ -280,12 +295,34 @@ def test_maec_create_obj_id(mock_create_obj_id):
     id_returned = r.create_obj_id()
     assert expected_value == id_returned
 
-@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_malware_instance")
-def test_maec_create_malware_instance(mock_create_malware_instance):
+#@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_malware_instance")
+
+def test_maec_create_malware_instance():
     r = MaecReport()
-    file_obj =  mock.Mock()
-    mal_instance = r.create_malware_instance(file_obj)
-    mock_create_malware_instance.assert_called_once()
+    r.currentObjectIndex = 0
+    r.package = {"observable_objects": {}}
+    test_file_data =  {
+            "yara": [],
+            "sha1": "fc45b50db30ad6cfd9220f282acbcb659bf916fc",
+            "name": "test.bin",
+            "type": "data",
+            "sha256": "c0a86ac453f8216fa5081a647d188e82f17b3e6d9a5b02944b4558d9cbd7eb4b",
+            "crc32": "E44BBC63",
+            "sha512": "245202d8453dec655684e32f301ba58e67c4729e0847a5751fb712a1ada42ed9801237c5a9fb396ad0ae723a12f2407ac9773415776db384d0c298e9196bf603",
+            "md5": "67a37542aaa213b335b45501c9686493",
+            "size": 12
+        }
+    expected_value = collections.OrderedDict([('type', 'file'), ('name', 'test.bin'), 
+        ('hashes', {'SHA-256': 'c0a86ac453f8216fa5081a647d188e82f17b3e6d9a5b02944b4558d9cbd7eb4b', 
+        'SHA-512': '245202d8453dec655684e32f301ba58e67c4729e0847a5751fb712a1ada42ed9801237c5a9fb396ad0ae723a12f2407ac9773415776db384d0c298e9196bf603', 
+        'SHA-1': 'fc45b50db30ad6cfd9220f282acbcb659bf916fc', 
+        'MD5': '67a37542aaa213b335b45501c9686493'}), 
+        ('size', 12), ('mime_type', None)])
+
+    mal_instance = r.create_malware_instance(test_file_data)
+    assert mal_instance['instance_object_refs'] ==  ['0']
+    assert r.package['observable_objects']['0'] == expected_value
+    
 
 
 @mock.patch("cuckoo.reporting.maecreport.MaecReport.setup_primary_malware_instance")
@@ -307,18 +344,32 @@ def test_maec_setup_primary_malware_instance(mock_setup):
     mal_instance = r.setup_primary_malware_instance()
     mock_setup.assert_called_once()
 
-@mock.patch("cuckoo.reporting.maecreport.MaecReport.add_dropped_files")
-def test_add_dropped_files(mock_add_dropped):
+
+def test_add_dropped_files():
     r = MaecReport()
-    r.package = mock.MagicMock()
-    r.results = mock.MagicMock()
+    r.package = {'relationships':[], "observable_objects": {}}
+    r.results = {}
+    r.currentObjectIndex = 0
+    r.primaryInstance = {'id' : 'test'}
+    r.results['dropped'] = [{
+            "yara": [],
+            "sha1": "fc45b50db30ad6cfd9220f282acbcb659bf916fc",
+            "name": "test.bin",
+            "type": "data",
+            "sha256": "c0a86ac453f8216fa5081a647d188e82f17b3e6d9a5b02944b4558d9cbd7eb4b",
+            "crc32": "E44BBC63",
+            "sha512": "245202d8453dec655684e32f301ba58e67c4729e0847a5751fb712a1ada42ed9801237c5a9fb396ad0ae723a12f2407ac9773415776db384d0c298e9196bf603",
+            "md5": "67a37542aaa213b335b45501c9686493",
+            "size": 12
+        }]
     r.add_dropped_files()
-    mock_add_dropped.assert_called_once()
+    assert len(r.package['relationships']) == 1
+    
 
 
-@mock.patch("cuckoo.reporting.maecreport.MaecReport.create_file_obj")
-def test_maec_create_file_obj(p):
+def test_maec_create_file_obj():
     r = MaecReport()
+    r.currentObjectIndex= 0
     file_data =  {
             "yara": [],
             "sha1": "fc45b50db30ad6cfd9220f282acbcb659bf916fc",
@@ -327,10 +378,17 @@ def test_maec_create_file_obj(p):
             "sha256": "c0a86ac453f8216fa5081a647d188e82f17b3e6d9a5b02944b4558d9cbd7eb4b",
             "crc32": "E44BBC63",
             "sha512": "245202d8453dec655684e32f301ba58e67c4729e0847a5751fb712a1ada42ed9801237c5a9fb396ad0ae723a12f2407ac9773415776db384d0c298e9196bf603",
-            "md5": "67a37542aaa213b335b45501c9686493"
+            "md5": "67a37542aaa213b335b45501c9686493",
+            "size" : 12
         }
+    expected_return = ('0' , collections.OrderedDict([('type', 'file'), ('name', 'test.bin'), 
+        ('hashes', {'SHA-256': 'c0a86ac453f8216fa5081a647d188e82f17b3e6d9a5b02944b4558d9cbd7eb4b', 
+        'SHA-512': '245202d8453dec655684e32f301ba58e67c4729e0847a5751fb712a1ada42ed9801237c5a9fb396ad0ae723a12f2407ac9773415776db384d0c298e9196bf603', 
+        'SHA-1': 'fc45b50db30ad6cfd9220f282acbcb659bf916fc', 
+        'MD5': '67a37542aaa213b335b45501c9686493'}), 
+        ('size', 12), ('mime_type', None)]))
     return_val = r.create_file_obj(file_data)
-    p.assert_called_once_with(file_data)
+    assert expected_return == return_val
 
 
 def test_maec_create_directory_obj():
